@@ -1,0 +1,16 @@
+pcb/output/version1-B_Cu.gbr
+pcb/output/version1-B_Mask.gbr
+pcb/output/version1-B_Paste.gbr
+pcb/output/version1-B_SilkS.gbr
+pcb/output/version1-Edge_Cuts.gbr
+pcb/output/version1-F_Cu.gbr
+pcb/output/version1-F_Mask.gbr
+pcb/output/version1-F_Paste.gbr
+pcb/output/version1-F_SilkS.gbr
+pcb/output/version1-job.gbrjob
+pcb/output/version1-NPTH.drl
+pcb/output/version1-PTH.drl
+pcb/version1.sch-bak
+.vscode/
+Drivers/
+build/
