@@ -49,7 +49,7 @@ typedef enum
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define ADC_BUF_LEN 2
+#define ADC_BUF_LEN 3
 #define MSG_DATA_LEN 4
 
 typedef struct
@@ -73,9 +73,11 @@ TIM_HandleTypeDef htim3;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
-uint16_t adc_buf[ADC_BUF_LEN];
+volatile uint16_t adc_buf[ADC_BUF_LEN];
 uint8_t uart_buf[5];
 float source_voltage = 0;
+float current1 = 0;
+float current2 = 0;
 bool running = false;
 uint32_t cycle_count = 0;
 uint32_t run_until_cycle = -1;
@@ -150,12 +152,14 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    source_voltage = 6.0 * 3.3 * (adc_buf[0] / 4095.0);
+    source_voltage = 6.1 * (adc_buf[0] / 4095.0);
+    current1 = 12.5 * ((adc_buf[1] / 4095.0) - 0.5);
+    current2 = 12.5 * ((adc_buf[2] / 4095.0) - 0.5);
     update_packets[RUN].data[0] = running;
     memcpy(&update_packets[CYCLE].data, &cycle_count, sizeof(cycle_count));
     memcpy(&update_packets[VOLTAGE].data, &source_voltage, sizeof(source_voltage));
-    memcpy(&update_packets[CURRENT1].data, &adc_buf[1], sizeof(uint16_t));
-    memcpy(&update_packets[CURRENT2].data, &adc_buf[2], sizeof(uint16_t));
+    memcpy(&update_packets[CURRENT1].data, &current1, sizeof(current1));
+    memcpy(&update_packets[CURRENT2].data, &current2, sizeof(current2));
     update_packets[BUTTON].data[0] = HAL_GPIO_ReadPin(BTN_GPIO_Port, BTN_Pin) == GPIO_PIN_RESET;
     memcpy(&update_packets[MILLIS_ON].data, &on_time, sizeof(uint32_t));
     memcpy(&update_packets[MILLIS_OFF].data, &off_time, sizeof(uint32_t));
@@ -234,23 +238,23 @@ static void MX_ADC1_Init(void)
   /** Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion)
   */
   hadc1.Instance = ADC1;
-  hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV256;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.ScanConvMode = ADC_SCAN_SEQ_FIXED;
   hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc1.Init.LowPowerAutoWait = DISABLE;
   hadc1.Init.LowPowerAutoPowerOff = DISABLE;
-  hadc1.Init.ContinuousConvMode = ENABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
   hadc1.Init.NbrOfConversion = 1;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
-  hadc1.Init.DMAContinuousRequests = ENABLE;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
   hadc1.Init.Overrun = ADC_OVR_DATA_OVERWRITTEN;
-  hadc1.Init.SamplingTimeCommon1 = ADC_SAMPLETIME_160CYCLES_5;
+  hadc1.Init.SamplingTimeCommon1 = ADC_SAMPLETIME_12CYCLES_5;
   hadc1.Init.OversamplingMode = DISABLE;
-  hadc1.Init.TriggerFrequencyMode = ADC_TRIGGER_FREQ_HIGH;
+  hadc1.Init.TriggerFrequencyMode = ADC_TRIGGER_FREQ_LOW;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
     Error_Handler();
@@ -427,7 +431,8 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 {
-  //HAL_GPIO_TogglePin(LED1_GPIO_Port, LED1_Pin);
+  // HAL_GPIO_TogglePin(LED1_GPIO_Port, LED1_Pin);
+  HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buf, ADC_BUF_LEN);
 }
 
 void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
