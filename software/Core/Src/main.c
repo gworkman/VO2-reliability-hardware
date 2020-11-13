@@ -38,8 +38,8 @@ typedef enum
   CURRENT1 = 0x3,
   CURRENT2 = 0x4,
   BUTTON = 0x5,
-  MILLIS_ON = 0x6,
-  MILLIS_OFF = 0x7,
+  MICROS_ON = 0x6,
+  MICROS_OFF = 0x7,
   // add new ones here
   ERR,
   MAX_CMD
@@ -81,8 +81,10 @@ float current2 = 0;
 bool running = false;
 uint32_t cycle_count = 0;
 uint32_t run_until_cycle = -1;
-uint32_t on_time = 3;
-uint32_t off_time = 7;
+uint32_t on_time = 3000;
+uint32_t off_time = 7000;
+
+uint32_t led_on_values[4] = {-1, -1, -1, -1};
 
 command_t update_packets[MAX_CMD];
 /* USER CODE END PV */
@@ -161,12 +163,12 @@ int main(void)
     memcpy(&update_packets[CURRENT1].data, &current1, sizeof(current1));
     memcpy(&update_packets[CURRENT2].data, &current2, sizeof(current2));
     update_packets[BUTTON].data[0] = HAL_GPIO_ReadPin(BTN_GPIO_Port, BTN_Pin) == GPIO_PIN_RESET;
-    memcpy(&update_packets[MILLIS_ON].data, &on_time, sizeof(uint32_t));
-    memcpy(&update_packets[MILLIS_OFF].data, &off_time, sizeof(uint32_t));
+    memcpy(&update_packets[MICROS_ON].data, &on_time, sizeof(uint32_t));
+    memcpy(&update_packets[MICROS_OFF].data, &off_time, sizeof(uint32_t));
 
     HAL_UART_Transmit(&huart1, update_packets, sizeof(update_packets), HAL_MAX_DELAY);
 
-    HAL_Delay(500);
+    HAL_Delay(50);
   }
   /* USER CODE END 3 */
 }
@@ -305,9 +307,9 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 16000;
+  htim3.Init.Prescaler = 16;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 100;
+  htim3.Init.Period = 9999;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
@@ -321,7 +323,7 @@ static void MX_TIM3_Init(void)
     Error_Handler();
   }
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 3;
+  sConfigOC.Pulse = 7000;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
   sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
@@ -438,11 +440,19 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
 {
   ++cycle_count;
-  HAL_GPIO_TogglePin(LED5_GPIO_Port, LED5_Pin);
   if (cycle_count >= run_until_cycle)
   {
     HAL_TIM_PWM_Stop_IT(&htim3, TIM_CHANNEL_1);
+    running = false;
+    HAL_GPIO_WritePin(LED5_GPIO_Port, LED5_Pin, GPIO_PIN_SET);
   }
+
+  uint16_t leds_on = 0;
+  leds_on |= cycle_count >= led_on_values[0] ? LED1_Pin : 0;
+  leds_on |= cycle_count >= led_on_values[1] ? LED2_Pin : 0;
+  leds_on |= cycle_count >= led_on_values[2] ? LED3_Pin : 0;
+  leds_on |= cycle_count >= led_on_values[3] ? LED4_Pin : 0;
+  HAL_GPIO_WritePin(LED1_GPIO_Port, leds_on, GPIO_PIN_SET);
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
@@ -453,7 +463,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     running = (bool)uart_buf[1];
     if (running)
     {
+      cycle_count = 0;
       HAL_TIM_PWM_Start_IT(&htim3, TIM_CHANNEL_1);
+      HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin | LED2_Pin | LED3_Pin | LED4_Pin | LED5_Pin, GPIO_PIN_RESET);
     }
     else
     {
@@ -462,14 +474,21 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     break;
   case CYCLE:
     memcpy(&run_until_cycle, uart_buf + 1, MSG_DATA_LEN);
+    led_on_values[0] = (uint32_t)(run_until_cycle * 1.0 / 5.0);
+    led_on_values[1] = (uint32_t)(run_until_cycle * 2.0 / 5.0);
+    led_on_values[2] = (uint32_t)(run_until_cycle * 3.0 / 5.0);
+    led_on_values[3] = (uint32_t)(run_until_cycle * 4.0 / 5.0);
     break;
-  case MILLIS_ON:
+  case MICROS_ON:
     on_time = *((uint32_t *)(uart_buf + 1));
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, on_time);
-    break;
-  case MILLIS_OFF:
-    off_time = *((uint32_t *)(uart_buf + 1));
     __HAL_TIM_SET_AUTORELOAD(&htim3, on_time + off_time);
+
+    break;
+  case MICROS_OFF:
+    off_time = *((uint32_t *)(uart_buf + 1));
+    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, off_time);
+    __HAL_TIM_SET_AUTORELOAD(&htim3, on_time + off_time);
+
     break;
   default:
     update_packets[ERR].data[0] = 1;
