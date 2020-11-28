@@ -40,8 +40,8 @@ typedef enum
   BUTTON = 0x5,
   MICROS_ON = 0x6,
   MICROS_OFF = 0x7,
-  // add new ones here
-  ERR,
+  PROGRAM = 0x8,
+  STREAM_MODE = 0x9,
   MAX_CMD
 } data_cmd_t;
 
@@ -74,17 +74,18 @@ UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
 volatile uint16_t adc_buf[ADC_BUF_LEN];
-uint8_t uart_buf[5];
-float source_voltage = 0;
-float current1 = 0;
-float current2 = 0;
-bool running = false;
-uint32_t cycle_count = 0;
-uint32_t run_until_cycle = -1;
-uint32_t on_time = 3000;
-uint32_t off_time = 7000;
+volatile uint8_t uart_buf[5];
+volatile float source_voltage = 0;
+volatile float current1 = 0;
+volatile float current2 = 0;
+volatile bool running = false;
+volatile bool stream_adc = false;
+volatile uint32_t cycle_count = 0;
+volatile uint32_t run_until_cycle = -1;
+volatile uint32_t on_time = 3000;
+volatile uint32_t off_time = 7000;
 
-uint32_t led_on_values[4] = {-1, -1, -1, -1};
+volatile uint32_t led_on_values[4] = {-1, -1, -1, -1};
 
 command_t update_packets[MAX_CMD];
 /* USER CODE END PV */
@@ -154,21 +155,28 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    source_voltage = 6.1 * (adc_buf[0] / 4095.0);
-    current1 = 12.5 * ((adc_buf[1] / 4095.0) - 0.5);
-    current2 = 12.5 * ((adc_buf[2] / 4095.0) - 0.5);
-    update_packets[RUN].data[0] = running;
-    memcpy(&update_packets[CYCLE].data, &cycle_count, sizeof(cycle_count));
-    memcpy(&update_packets[VOLTAGE].data, &source_voltage, sizeof(source_voltage));
-    memcpy(&update_packets[CURRENT1].data, &current1, sizeof(current1));
-    memcpy(&update_packets[CURRENT2].data, &current2, sizeof(current2));
-    update_packets[BUTTON].data[0] = HAL_GPIO_ReadPin(BTN_GPIO_Port, BTN_Pin) == GPIO_PIN_RESET;
-    memcpy(&update_packets[MICROS_ON].data, &on_time, sizeof(uint32_t));
-    memcpy(&update_packets[MICROS_OFF].data, &off_time, sizeof(uint32_t));
+    if (stream_adc)
+    {
+    }
+    else
+    {
+      // send the normal data
+      source_voltage = 6.1 * (adc_buf[0] / 4095.0);
+      current1 = 0.007245213392640534 * adc_buf[1] - 15.265676481016202;
+      current2 = 0.007245213392640534 * adc_buf[2] - 15.265676481016202;
+      update_packets[RUN].data[0] = running;
+      memcpy(&update_packets[CYCLE].data, &cycle_count, sizeof(cycle_count));
+      memcpy(&update_packets[VOLTAGE].data, &source_voltage, sizeof(source_voltage));
+      memcpy(&update_packets[CURRENT1].data, &current1, sizeof(current1));
+      memcpy(&update_packets[CURRENT2].data, &current2, sizeof(current2));
+      update_packets[BUTTON].data[0] = HAL_GPIO_ReadPin(BTN_GPIO_Port, BTN_Pin) == GPIO_PIN_RESET;
+      memcpy(&update_packets[MICROS_ON].data, &on_time, sizeof(uint32_t));
+      memcpy(&update_packets[MICROS_OFF].data, &off_time, sizeof(uint32_t));
 
-    HAL_UART_Transmit(&huart1, update_packets, sizeof(update_packets), HAL_MAX_DELAY);
+      HAL_UART_Transmit(&huart1, update_packets, sizeof(update_packets), HAL_MAX_DELAY);
 
-    HAL_Delay(50);
+      HAL_Delay(4);
+    }
   }
   /* USER CODE END 3 */
 }
@@ -482,16 +490,32 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
   case MICROS_ON:
     on_time = *((uint32_t *)(uart_buf + 1));
     __HAL_TIM_SET_AUTORELOAD(&htim3, on_time + off_time);
-
     break;
   case MICROS_OFF:
     off_time = *((uint32_t *)(uart_buf + 1));
     __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, off_time);
     __HAL_TIM_SET_AUTORELOAD(&htim3, on_time + off_time);
-
     break;
-  default:
-    update_packets[ERR].data[0] = 1;
+  case PROGRAM:
+    // HAL_FLASH_Unlock();
+    // HAL_FLASH_OB_Unlock();
+    // SET_BIT(FLASH->OPTR, FLASH_OPTR_nBOOT1);
+    // SET_BIT(FLASH->OPTR, FLASH_OPTR_nBOOT_SEL);
+    // CLEAR_BIT(FLASH->OPTR, FLASH_OPTR_nBOOT0);
+    // while (READ_BIT(FLASH->SR, FLASH_SR_BSY1))
+    // {
+    //   // wait for flash operation to finish
+    // }
+    // SET_BIT(FLASH->CR, FLASH_CR_OPTSTRT);
+    // while (READ_BIT(FLASH->SR, FLASH_SR_BSY1))
+    // {
+    //   // wait for flash operation to finish
+    // }
+    // SET_BIT(FLASH->CR, FLASH_CR_OBL_LAUNCH);
+    // HAL_NVIC_SystemReset();
+    break;
+  case STREAM_MODE:
+    stream_adc = (bool)uart_buf[1];
     break;
   }
   HAL_UART_Receive_IT(&huart1, uart_buf, MSG_DATA_LEN + 1);
